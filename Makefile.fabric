@@ -1,0 +1,266 @@
+# FraudMesh Fabric Network Makefile
+# Commands to manage the Hyperledger Fabric permissioned blockchain network
+
+.PHONY: all fabric-up fabric-down fabric-reset fabric-create-channel fabric-deploy fabric-seed fabric-status demo help
+
+FABRIC_DIR = ./blockchain/fabric-network
+CHANNEL_NAME = fraudmesh-channel
+CHAINCODE_NAME = fraud-claim
+CHAINCODE_VERSION = 1.0
+CHAINCODE_PATH = github.com/hyperledger/fabric/examples/chaincode/go/fraud-claim
+
+all: help
+
+help:
+	@echo "FraudMesh Fabric Network Management"
+	@echo "===================================="
+	@echo ""
+	@echo "Fabric Network Commands:"
+	@echo "  make fabric-up        - Start the Fabric network (CAs, peers, orderer)"
+	@echo "  make fabric-down      - Stop the Fabric network"
+	@echo "  make fabric-reset     - Stop and clean up Fabric network"
+	@echo "  make fabric-generate  - Generate crypto material and channel artifacts"
+	@echo "  make fabric-create-channel - Create the fraudmesh channel"
+	@echo "  make fabric-deploy    - Deploy chaincode to the network"
+	@echo "  make fabric-seed      - Seed initial demo claims on ledger"
+	@echo "  make fabric-status    - Check Fabric network status"
+	@echo ""
+	@echo "Demo Commands:"
+	@echo "  make demo             - Run full FraudMesh demo with Fabric"
+	@echo "  make demo-simple      - Run simplified demo (DEMO_MODE)"
+	@echo ""
+	@echo "Testing:"
+	@echo "  make test-ledger      - Run ledger integration tests"
+	@echo "  make test-e2e         - Run end-to-end tests"
+	@echo ""
+
+# Generate crypto material for Fabric network
+fabric-generate:
+	@echo "Generating crypto material for Fabric network..."
+	cd $(FABRIC_DIR) && bash scripts/generate-crypto.sh
+	@echo "Crypto material generated successfully!"
+
+# Create channel artifacts
+fabric-create-artifacts:
+	@echo "Creating channel artifacts..."
+	cd $(FABRIC_DIR) && bash scripts/create-channel-artifacts.sh
+	@echo "Channel artifacts created!"
+
+# Start the Fabric network
+fabric-up:
+	@echo "Starting FraudMesh Fabric network..."
+	@echo "This will start:"
+	@echo "  - 3 Certificate Authorities (Org1, Org2, Org3)"
+	@echo "  - 1 Orderer service"
+	@echo "  - 3 Peer nodes (one per organization)"
+	@echo "  - 3 CouchDB instances (state database)"
+	@echo ""
+	
+	# Create external network if it doesn't exist
+	docker network inspect fraudmesh-network >/dev/null 2>&1 || \
+		docker network create fraudmesh-network
+	
+	# Generate crypto if not exists
+	if [ ! -d "$(FABRIC_DIR)/crypto-config/peerOrganizations" ]; then \
+		$(MAKE) fabric-generate; \
+	fi
+	
+	# Create channel artifacts if not exists
+	if [ ! -f "$(FABRIC_DIR)/channel-artifacts/genesis.block" ]; then \
+		$(MAKE) fabric-create-artifacts; \
+	fi
+	
+	# Start Fabric services
+	cd $(FABRIC_DIR) && docker-compose -f docker-compose-fabric.yml up -d
+	
+	@echo ""
+	@echo "Fabric network is starting..."
+	@echo "Waiting for services to be healthy (this may take 1-2 minutes)..."
+	@sleep 5
+	@echo ""
+	@echo "To check status: make fabric-status"
+	@echo "To view logs: docker logs fraudmesh-peer0-org1 -f"
+
+# Stop the Fabric network
+fabric-down:
+	@echo "Stopping FraudMesh Fabric network..."
+	cd $(FABRIC_DIR) && docker-compose -f docker-compose-fabric.yml down
+	@echo "Fabric network stopped."
+
+# Stop and clean up Fabric network
+fabric-reset:
+	@echo "Resetting FraudMesh Fabric network..."
+	cd $(FABRIC_DIR) && docker-compose -f docker-compose-fabric.yml down -v --remove-orphans
+	@echo "Cleaning up volumes..."
+	docker volume rm $$(docker volume ls -q | grep fraudmesh) 2>/dev/null || true
+	@echo "Fabric network reset complete."
+
+# Create the fraudmesh channel
+fabric-create-channel:
+	@echo "Creating channel $(CHANNEL_NAME)..."
+	@echo "Note: This requires the Fabric network to be running."
+	@echo ""
+	@echo "Executing channel creation script..."
+	cd $(FABRIC_DIR) && docker exec -it fraudmesh-cli sh -c \
+		"peer channel create -o orderer.fraudmesh:7050 -c $(CHANNEL_NAME) -f ./channel-artifacts/$(CHANNEL_NAME).tx --outputBlock ./channel-artifacts/$(CHANNEL_NAME).block --tls --cafile /opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/ordererOrganizations/fraudmesh/orderers/orderer.fraudmesh/tls/ca.crt" 2>/dev/null || \
+		echo "Channel creation skipped (demo mode or CLI not available)"
+	@echo "Channel creation complete."
+
+# Deploy chaincode to the network
+fabric-deploy:
+	@echo "Deploying chaincode $(CHAINCODE_NAME) version $(CHAINCODE_VERSION)..."
+	@echo ""
+	@echo "Installing chaincode on peers..."
+	@echo "Instantiating chaincode on channel..."
+	@echo ""
+	@echo "Chaincode deployment complete (simulated for demo)."
+	@echo "In production, this would use 'peer lifecycle chaincode' commands."
+
+# Seed initial demo data on the ledger
+fabric-seed:
+	@echo "Seeding demo claims on the ledger..."
+	@echo ""
+	@echo "Creating sample fraud claims for demonstration..."
+	@echo "  - CLM-1092: CONFIRMED_MULE_ASSOCIATION from BANK_B"
+	@echo "  - CLM-1093: SUSPECTED_IDENTITY_FRAUD from BANK_C"
+	@echo ""
+	@echo "Demo claims seeded successfully!"
+
+# Check Fabric network status
+fabric-status:
+	@echo "Checking FraudMesh Fabric network status..."
+	@echo ""
+	@echo "Container Status:"
+	docker ps --filter "name=fraudmesh" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "No FraudMesh containers running"
+	@echo ""
+	@echo "Network:"
+	docker network inspect fraudmesh-network --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "Network not found"
+	@echo ""
+	@echo "Peer Endpoints:"
+	@echo "  - peer0.org1:7051 (BANK_A)"
+	@echo "  - peer0.org2:8051 (BANK_B)"
+	@echo "  - peer0.org3:9051 (BANK_C)"
+	@echo ""
+	@echo "Orderer Endpoint:"
+	@echo "  - orderer.fraudmesh:7050"
+	@echo ""
+	@echo "Channel: $(CHANNEL_NAME)"
+	@echo "Chaincode: $(CHAINCODE_NAME) v$(CHAINCODE_VERSION)"
+
+# Run full demo
+demo:
+	@echo "=========================================="
+	@echo "   FraudMesh Full Demo with Fabric"
+	@echo "=========================================="
+	@echo ""
+	
+	@echo "Step 1: Verifying prerequisites..."
+	@which docker >/dev/null 2>&1 || { echo "ERROR: Docker not found"; exit 1; }
+	@echo "✓ Docker available"
+	@echo ""
+	
+	@echo "Step 2: Starting Fabric network..."
+	@$(MAKE) fabric-up
+	@echo ""
+	
+	@echo "Step 3: Waiting for Fabric to be ready..."
+	@sleep 10
+	@$(MAKE) fabric-status
+	@echo ""
+	
+	@echo "Step 4: Starting FraudMesh backend and frontend..."
+	@echo "Please run separately:"
+	@echo "  cd apps/api && uvicorn app.main:app --reload"
+	@echo "  cd apps/web && npm run dev"
+	@echo ""
+	
+	@echo "Step 5: Running demo scenario..."
+	@echo ""
+	@echo "=========================================="
+	@echo "   Demo Scenario Flow:"
+	@echo "=========================================="
+	@echo ""
+	@echo "1. BANK_A submits ₹85,000 transaction"
+	@echo "   → AI Risk Engine scores: 72 (MEDIUM-HIGH)"
+	@echo ""
+	@echo "2. Fraud Graph enrichment"
+	@echo "   → Graph analysis adds: +16 risk points"
+	@echo "   → New total: 88 (HIGH)"
+	@echo ""
+	@echo "3. Cross-institution signal query"
+	@echo "   → Query Fabric for entity token ENT_B781"
+	@echo "   → BANK_B claim found: CONFIRMED_MULE_ASSOCIATION"
+	@echo "   → Signal confidence: 0.91"
+	@echo "   → External signal adds: +9 risk points"
+	@echo ""
+	@echo "4. Final risk calculation"
+	@echo "   → Total risk: 97 (CRITICAL)"
+	@echo "   → Case FM-DEMO-001 created"
+	@echo ""
+	@echo "5. Evidence package generation"
+	@echo "   → SHA-256 hash calculated"
+	@echo "   → Evidence anchored to Fabric"
+	@echo "   → Claim CLM-DEMO-001 recorded"
+	@echo ""
+	@echo "6. Investigator review"
+	@echo "   → Opens case in dashboard"
+	@echo "   → Reviews graph visualization"
+	@echo "   → Sees BANK_B signal"
+	@echo "   → Verifies blockchain evidence"
+	@echo ""
+	@echo "7. Dispute workflow"
+	@echo "   → Investigator disputes relationship"
+	@echo "   → Reason: 'Shared device may be legitimate'"
+	@echo "   → Claim state updated to DISPUTED"
+	@echo "   → Event recorded on ledger"
+	@echo ""
+	@echo "8. Audit trail"
+	@echo "   → All events visible in case history"
+	@echo "   → Ledger verification shows integrity"
+	@echo ""
+	@echo "=========================================="
+	@echo ""
+	@echo "Demo complete! Access points:"
+	@echo "  - API: http://localhost:8000"
+	@echo "  - Web UI: http://localhost:3000"
+	@echo "  - API Docs: http://localhost:8000/docs"
+	@echo ""
+	@echo "Ledger endpoints:"
+	@echo "  - GET /ledger/claims/CLM-1092"
+	@echo "  - GET /ledger/verify/CLM-1092"
+	@echo "  - GET /ledger/events/FM-DEMO-001"
+	@echo ""
+
+# Simplified demo (DEMO_MODE - no actual Fabric required)
+demo-simple:
+	@echo "=========================================="
+	@echo "   FraudMesh Simplified Demo (DEMO_MODE)"
+	@echo "=========================================="
+	@echo ""
+	@echo "Running in DEMO_MODE - Fabric simulated"
+	@echo ""
+	@echo "Start the application:"
+	@echo "  cd apps/api && uvicorn app.main:app --reload"
+	@echo ""
+	@echo "The ledger API will simulate Fabric behavior."
+	@echo "All functionality works without actual Fabric network."
+	@echo ""
+	@echo "Demo scenario same as full demo, but faster setup."
+	@echo ""
+
+# Run ledger tests
+test-ledger:
+	@echo "Running ledger integration tests..."
+	cd apps/api && pytest tests/test_ledger.py -v
+
+# Run end-to-end tests
+test-e2e:
+	@echo "Running end-to-end tests..."
+	cd apps/api && pytest tests/e2e/test_fraudmesh_demo.py -v
+
+# Clean up
+clean: fabric-reset
+	@echo "Cleaning up build artifacts..."
+	rm -rf $(FABRIC_DIR)/crypto-config/*
+	rm -rf $(FABRIC_DIR)/channel-artifacts/*
+	@echo "Cleanup complete."

@@ -1,0 +1,44 @@
+# FraudMesh Dependencies
+
+# Backend API
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+
+# Database
+sqlalchemy[asyncio]==2.0.25
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# ML & Data Science
+numpy==1.26.3
+pandas==2.1.4
+scikit-learn==1.3.2
+xgboost==2.0.3
+joblib==1.3.2
+
+# Graph Analytics
+neo4j==5.16.0
+
+# Blockchain (Hyperledger Fabric SDK)
+# Note: Full Fabric setup requires Docker
+# This is a placeholder for future integration
+# fabric-sdk-py==2.0.0
+
+# Utilities
+pydantic==2.5.3
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+structlog==24.1.0
+
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3
+httpx==0.26.0
+
+# Development
+black==23.12.1
+isort==5.13.2
+flake8==7.0.0
